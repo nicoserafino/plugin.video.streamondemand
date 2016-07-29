@@ -6,8 +6,6 @@
 # ------------------------------------------------------------
 import base64
 import re
-import time
-import urllib
 import urlparse
 
 from core import config
@@ -16,7 +14,6 @@ from core import scrapertools
 from core.item import Item
 from core.tmdb import infoSod
 from servers import servertools
-
 
 __channel__ = "italiafilmvideohd"
 __category__ = "F,S,A"
@@ -51,7 +48,7 @@ def mainlist(item):
         Item(channel=__channel__,
              title="[COLOR azure]Ultimi Film Inseriti[/COLOR]",
              action="fichas",
-             url=host + "/nuove-uscite/",
+             url=host + "/film-hd/",
              thumbnail="http://orig03.deviantart.net/6889/f/2014/079/7/b/movies_and_popcorn_folder_icon_by_matheusgrilo-d7ay4tw.png"),
         Item(channel=__channel__,
              title="[COLOR azure]Film per Genere[/COLOR]",
@@ -156,10 +153,14 @@ def fichas(item):
                  fulltitle=title,
                  show=scrapedtitle), tipo='movie'))
 
+    itemlist.append(
+        Item(channel=__channel__,
+             action="HomePage",
+             title="[COLOR yellow]Torna Home[/COLOR]",
+             folder=True)),
+
     # Paginación
-    next_page = re.compile('<a href="(.+?)" class="single_page" title=".+?">', re.DOTALL).findall(data)
-    for page in next_page:
-        next_page = page
+    next_page = scrapertools.find_single_match(data, '<a href="([^"]+)"\s*><span aria-hidden="true">&raquo;')
 
     if next_page != "":
         itemlist.append(
@@ -183,7 +184,7 @@ def findvideos(item):
     patron = r'<iframe width=".+?" height=".+?" src="([^"]+)" allowfullscreen frameborder="0">'
     url = scrapertools.find_single_match(data, patron).replace("?italiafilm", "")
 
-    if 'hdpass.net' in url:
+    if 'hdpass' in url:
         data = scrapertools.cache_page(url, headers=headers)
 
         start = data.find('<div class="row mobileRes">')
@@ -196,6 +197,7 @@ def findvideos(item):
 
         res = scrapertools.find_single_match(data, patron_res)
 
+        urls = []
         for res_url, res_video in scrapertools.find_multiple_matches(res, '<option.*?value="([^"]+?)">([^<]+?)</option>'):
 
             data = scrapertools.cache_page(urlparse.urljoin(url, res_url), headers=headers).replace('\n', '')
@@ -207,17 +209,19 @@ def findvideos(item):
                 data = scrapertools.cache_page(urlparse.urljoin(url, mir_url), headers=headers).replace('\n', '')
 
                 for media_label, media_url in re.compile(patron_media).findall(data):
-                    media_label = scrapertools.decodeHtmlentities(media_label)
+                    urls.append(url_decode(media_url))
 
-                    itemlist.append(
-                        Item(channel=__channel__,
-                             server=media_label,
-                             action="play",
-                             title=item.title + ' - [%s @%s]' % (media_label, res_video),
-                             url=url_decode(media_url),
-                             folder=False))
+        itemlist = servertools.find_video_items(data='\n'.join(urls))
+        for videoitem in itemlist:
+            videoitem.title = item.title + videoitem.title
+            videoitem.fulltitle = item.fulltitle
+            videoitem.thumbnail = item.thumbnail
+            videoitem.show = item.show
+            videoitem.plot = item.plot
+            videoitem.channel = __channel__
 
         return itemlist
+
 
 def url_decode(url_enc):
     lenght = len(url_enc)
@@ -241,3 +245,7 @@ def url_decode(url_enc):
     reverse = reverse + last_car
     return base64.b64decode(reverse)
 
+
+def HomePage(item):
+    import xbmc
+    xbmc.executebuiltin("ReplaceWindow(10024,plugin://plugin.video.streamondemand)")
